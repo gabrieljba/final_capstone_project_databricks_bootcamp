@@ -1,0 +1,28 @@
+command:
+  - "python"
+  - "job_mcp_server.py"
+
+resources:
+  - name: requirements
+    source:
+      path: ./requirements.txt
+
+env:
+  - name: LAKEBASE_SECRET_SCOPE
+    value: "database"
+  - name: LAKEBASE_SECRET_KEY
+    value: "lakebase-url"
+  - name: ADZUNA_SECRET_SCOPE
+    value: "jobs"
+  - name: ADZUNA_APP_ID_KEY
+    value: "adzuna-app-id"
+  - name: ADZUNA_APP_KEY_KEY
+    value: "adzuna-app-key"
+  - name: USAJOBS_SECRET_SCOPE
+    value: "jobs"
+  - name: USAJOBS_API_KEY_KEY
+    value: "usajobs-api-key"
+  - name: USAJOBS_USER_AGENT_KEY
+    value: "usajobs-user-agent"
+  - name: EMBEDDING_MODEL
+    value: "sentence-transformers/all-MiniLM-L6-v2"
