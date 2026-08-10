@@ -76,7 +76,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 # ---------------------------------------------------------------------------
 
 
-def _log_activity(email: str | None, tool_name: str, params: dict, summary: str, status: str = "success") -> None:
+def _log_activity(email: str = 'gbarriosarias@gmail.com' | None, tool_name: str, params: dict, summary: str, status: str = "success") -> None:
     """Insert a row into agent_activity_log so the dashboard feed can render it."""
     try:
         lakebase.run_write(
@@ -142,7 +142,7 @@ def _upsert_job_embedding(job_id: str, title: str, description: str) -> None:
         logger.exception("Failed to embed job_id=%s", job_id)
 
 
-def _ensure_user(email: str) -> None:
+def _ensure_user(email: str = 'gbarriosarias@gmail.com') -> None:
     """Insert a stub user row if this email is new."""
     lakebase.run_write(
         "INSERT INTO users (email) VALUES (%s) ON CONFLICT (email) DO NOTHING",
@@ -162,7 +162,7 @@ def search_jobs_all_sources(
     remote_only: bool = False,
     salary_min: float = 0,
     limit_per_source: int = 10,
-    email: str = "",
+    email: str = 'gbarriosarias@gmail.com',
 ) -> dict:
     """
     Search Adzuna + USAJobs + RemoteOK for jobs matching the query, upsert
@@ -247,7 +247,7 @@ def search_jobs_all_sources(
 
 
 @mcp.tool
-def search_adzuna(query: str, location: str = "", salary_min: float = 0, limit: int = 10, email: str = "") -> dict:
+def search_adzuna(query: str, location: str = "", salary_min: float = 0, limit: int = 10, email: str = 'gbarriosarias@gmail.com') -> dict:
     """
     Search ONLY Adzuna (public jobs board). Use this when the user
     explicitly wants Adzuna results.
@@ -279,7 +279,7 @@ def search_adzuna(query: str, location: str = "", salary_min: float = 0, limit: 
 
 
 @mcp.tool
-def search_usajobs(query: str, location: str = "", salary_min: float = 0, remote_only: bool = False, limit: int = 10, email: str = "") -> dict:
+def search_usajobs(query: str, location: str = "", salary_min: float = 0, remote_only: bool = False, limit: int = 10, email: str = 'gbarriosarias@gmail.com') -> dict:
     """
     Search ONLY USAJobs (US federal government openings). Use this when
     the user is looking for public-sector jobs.
@@ -314,7 +314,7 @@ def search_usajobs(query: str, location: str = "", salary_min: float = 0, remote
 
 
 @mcp.tool
-def search_remoteok(query: str, salary_min: float = 0, limit: int = 10, email: str = "") -> dict:
+def search_remoteok(query: str, salary_min: float = 0, limit: int = 10, email: str = 'gbarriosarias@gmail.com') -> dict:
     """
     Search ONLY RemoteOK (remote-only tech jobs). Use this when the user
     wants remote roles specifically.
@@ -345,7 +345,7 @@ def search_remoteok(query: str, salary_min: float = 0, limit: int = 10, email: s
 
 
 @mcp.tool
-def semantic_search_jobs(query: str, limit: int = 10, email: str = "") -> dict:
+def semantic_search_jobs(query: str, limit: int = 10, email: str = 'gbarriosarias@gmail.com') -> dict:
     """
     Semantic (vector) search over ALL job postings previously synced into
     Lakebase. Use this to find matches using natural language like
@@ -413,7 +413,7 @@ def get_job_details(job_id: str) -> dict:
 
 @mcp.tool
 def upsert_user_profile(
-    email: str,
+    email: str = 'gbarriosarias@gmail.com',
     name: str = "",
     target_role: str = "",
     remote_ok: bool = True,
@@ -479,7 +479,7 @@ def upsert_user_profile(
 
 
 @mcp.tool
-def save_job_to_pipeline(email: str, job_id: str, stage: str = "saved", match_reasoning: str = "") -> dict:
+def save_job_to_pipeline(email: str = 'gbarriosarias@gmail.com', job_id: str, stage: str = "saved", match_reasoning: str = "") -> dict:
     """
     Save a job to the user's application pipeline in the specified stage.
 
@@ -524,7 +524,7 @@ def save_job_to_pipeline(email: str, job_id: str, stage: str = "saved", match_re
 
 
 @mcp.tool
-def update_application_stage(email: str, job_id: str, new_stage: str) -> dict:
+def update_application_stage(email: str = 'gbarriosarias@gmail.com', job_id: str, new_stage: str) -> dict:
     """
     Move an existing application to a new pipeline stage.
 
@@ -556,7 +556,7 @@ def update_application_stage(email: str, job_id: str, new_stage: str) -> dict:
 
 
 @mcp.tool
-def add_interview_note(email: str, job_id: str, note: str, interview_date: str = "") -> dict:
+def add_interview_note(email: str = 'gbarriosarias@gmail.com', job_id: str, note: str, interview_date: str = "") -> dict:
     """
     Attach a free-text interview note to an existing application.
 
@@ -595,7 +595,7 @@ def add_interview_note(email: str, job_id: str, note: str, interview_date: str =
 
 
 @mcp.tool
-def draft_cover_letter(email: str, job_id: str) -> dict:
+def draft_cover_letter(email: str = 'gbarriosarias@gmail.com', job_id: str) -> dict:
     """
     Draft a tailored cover letter for a specific job, using the user's
     profile (resume_text, skills, seniority, target_role) as context.
@@ -673,7 +673,7 @@ def draft_cover_letter(email: str, job_id: str) -> dict:
 
 
 @mcp.tool
-def explain_job_match(email: str, job_id: str) -> dict:
+def explain_job_match(email: str = 'gbarriosarias@gmail.com', job_id: str) -> dict:
     """
     Score how well a job matches the user's profile using cosine similarity
     between the job embedding and a synthesized "user profile embedding"
@@ -739,7 +739,7 @@ def explain_job_match(email: str, job_id: str) -> dict:
 
 
 @mcp.tool
-def find_stale_applications(email: str, days_stale: int = 7) -> dict:
+def find_stale_applications(email: str = 'gbarriosarias@gmail.com', days_stale: int = 7) -> dict:
     """
     Find applications that haven't been updated in `days_stale` days and
     are not in a terminal stage (offer/rejected). Useful to nudge users
@@ -773,7 +773,7 @@ def find_stale_applications(email: str, days_stale: int = 7) -> dict:
 
 
 @mcp.tool
-def get_pipeline_summary(email: str) -> dict:
+def get_pipeline_summary(email: str = 'gbarriosarias@gmail.com') -> dict:
     """
     Get a quick summary of the user's application pipeline: counts by stage,
     total applications, total saved jobs, and stale count (>7 days no update).
