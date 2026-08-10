@@ -12,6 +12,7 @@ Run locally:
     python app.py
 """
 
+import json
 import logging
 import os
 
@@ -275,6 +276,186 @@ def api_top_matches():
         (email, limit),
     )
     return jsonify({"matches": rows, "ranking": "recent"})
+
+
+# ---------------------------------------------------------------------------
+# Interactive endpoints - WRITES from the dashboard UI
+# ---------------------------------------------------------------------------
+
+VALID_STAGES = {"saved", "applied", "interviewing", "offer", "rejected"}
+
+
+def _log_dashboard_action(email: str, tool_name: str, params: dict, summary: str) -> None:
+    """Log dashboard-driven actions to the same agent_activity_log so
+    the activity feed shows human + agent actions side-by-side."""
+    try:
+        lakebase.run_write(
+            """
+            INSERT INTO agent_activity_log (email, tool_name, params, result_summary, status)
+            VALUES (%s, %s, %s::jsonb, %s, 'success')
+            """,
+            (email, f"[dashboard] {tool_name}", json.dumps(params, default=str), summary[:500]),
+        )
+    except Exception:
+        logging.exception("Failed to log dashboard action")
+
+
+@app.route("/api/applications/<int:app_id>/stage", methods=["POST"])
+def api_update_stage(app_id: int):
+    """Move an application to a new stage (used by kanban drag+drop and dropdown)."""
+    body = request.json or {}
+    new_stage = (body.get("stage") or "").strip().lower()
+    if new_stage not in VALID_STAGES:
+        return jsonify({"error": f"stage must be one of {sorted(VALID_STAGES)}"}), 400
+
+    row = lakebase.run_query(
+        "SELECT a.email, p.title, p.company FROM applications a "
+        "JOIN job_postings p ON p.id = a.job_id WHERE a.id = %s",
+        (app_id,),
+    )
+    if not row:
+        return jsonify({"error": "application not found"}), 404
+    meta = row[0]
+
+    affected = lakebase.run_write(
+        "UPDATE applications SET stage = %s, updated_at = now() WHERE id = %s",
+        (new_stage, app_id),
+    )
+    if affected == 0:
+        return jsonify({"error": "application not found"}), 404
+
+    _log_dashboard_action(
+        meta["email"], "update_stage",
+        {"application_id": app_id, "new_stage": new_stage},
+        f"Moved '{meta.get('title')}' at {meta.get('company')} to '{new_stage}'",
+    )
+    return jsonify({"status": "success", "stage": new_stage})
+
+
+@app.route("/api/applications/<int:app_id>", methods=["DELETE"])
+def api_delete_application(app_id: int):
+    """Remove an application from the pipeline."""
+    row = lakebase.run_query(
+        "SELECT a.email, p.title, p.company FROM applications a "
+        "JOIN job_postings p ON p.id = a.job_id WHERE a.id = %s",
+        (app_id,),
+    )
+    if not row:
+        return jsonify({"error": "application not found"}), 404
+    meta = row[0]
+
+    affected = lakebase.run_write(
+        "DELETE FROM applications WHERE id = %s",
+        (app_id,),
+    )
+    if affected == 0:
+        return jsonify({"error": "application not found"}), 404
+
+    _log_dashboard_action(
+        meta["email"], "delete_application",
+        {"application_id": app_id},
+        f"Removed '{meta.get('title')}' at {meta.get('company')} from pipeline",
+    )
+    return jsonify({"status": "success"})
+
+
+@app.route("/api/applications/<int:app_id>/note", methods=["POST"])
+def api_add_note(app_id: int):
+    """Attach a note to an application from the dashboard."""
+    body = request.json or {}
+    note = (body.get("note") or "").strip()
+    if not note:
+        return jsonify({"error": "note is required"}), 400
+
+    row = lakebase.run_query(
+        "SELECT email FROM applications WHERE id = %s",
+        (app_id,),
+    )
+    if not row:
+        return jsonify({"error": "application not found"}), 404
+    email = row[0]["email"]
+
+    lakebase.run_write(
+        """
+        INSERT INTO interview_notes (application_id, email, note)
+        VALUES (%s, %s, %s)
+        """,
+        (app_id, email, note),
+    )
+    _log_dashboard_action(
+        email, "add_note",
+        {"application_id": app_id},
+        f"Added note to application #{app_id}",
+    )
+    return jsonify({"status": "success"})
+
+
+@app.route("/api/velocity")
+def api_velocity():
+    """Weekly velocity: new applications per week over the last 8 weeks."""
+    email = request.args.get("email") or _current_user_email()
+    rows = lakebase.run_query(
+        """
+        WITH weeks AS (
+            SELECT generate_series(
+                date_trunc('week', now() - INTERVAL '7 weeks'),
+                date_trunc('week', now()),
+                INTERVAL '1 week'
+            ) AS week_start
+        )
+        SELECT
+            to_char(w.week_start, 'MM/DD') AS label,
+            w.week_start,
+            COUNT(a.id) AS new_apps
+        FROM weeks w
+        LEFT JOIN applications a
+            ON a.email = %s
+           AND date_trunc('week', a.created_at) = w.week_start
+        GROUP BY w.week_start
+        ORDER BY w.week_start
+        """,
+        (email,),
+    )
+    return jsonify({
+        "labels": [r["label"] for r in rows],
+        "values": [int(r["new_apps"]) for r in rows],
+    })
+
+
+@app.route("/api/funnel")
+def api_funnel():
+    """Cumulative conversion funnel: saved -> applied -> interviewing -> offer.
+    Interpretation: each stage's count includes applications that later moved
+    forward, so we approximate cumulative touch counts."""
+    email = request.args.get("email") or _current_user_email()
+    rows = lakebase.run_query(
+        "SELECT stage, COUNT(*) AS c FROM applications WHERE email = %s GROUP BY stage",
+        (email,),
+    )
+    counts = {r["stage"]: int(r["c"]) for r in rows}
+    # Cumulative funnel semantics: everything in interviewing was once "applied",
+    # everything in offer was once "interviewing", etc.
+    saved         = sum(counts.values()) - counts.get("rejected", 0)
+    applied       = counts.get("applied", 0) + counts.get("interviewing", 0) + counts.get("offer", 0)
+    interviewing  = counts.get("interviewing", 0) + counts.get("offer", 0)
+    offer         = counts.get("offer", 0)
+
+    def rate(num: int, den: int) -> float:
+        return round(num / den * 100, 1) if den > 0 else 0.0
+
+    return jsonify({
+        "stages": [
+            {"label": "Saved", "value": saved},
+            {"label": "Applied", "value": applied},
+            {"label": "Interviewing", "value": interviewing},
+            {"label": "Offer", "value": offer},
+        ],
+        "rates": {
+            "saved_to_applied": rate(applied, saved),
+            "applied_to_interviewing": rate(interviewing, applied),
+            "interviewing_to_offer": rate(offer, interviewing),
+        },
+    })
 
 
 if __name__ == "__main__":

@@ -5,9 +5,12 @@ An agentic job-search assistant built on **Databricks Apps + Lakebase + Agent Br
 - The **agent** searches jobs across **Adzuna**, **USAJobs**, and **RemoteOK**, embeds
   descriptions with sentence-transformers, saves matches to a per-user pipeline in
   Lakebase, drafts tailored cover letters, and tracks interview notes.
-- The **dashboard** (a separate Databricks App) reads from the same Lakebase database
-  and reflects the agent's activity live: pipeline funnel, source breakdown, stale
-  applications, top matches, agent activity feed, and generated cover letters.
+- The **interactive dashboard** (a separate Databricks App) reads AND writes the
+  same Lakebase database. It reflects the agent's activity live and lets a human
+  user collaborate: a drag-and-drop **Kanban board**, filters, quick-edit dropdowns,
+  delete + note buttons per card, a conversion **funnel** with rates, a weekly
+  **velocity** chart, source breakdown, stale-application detection, semantic-
+  ranked top matches, unified agent+human activity feed, and generated cover letters.
 
 ## Architecture
 
@@ -19,8 +22,9 @@ Agent Bricks agent  --(MCP tool calls)-->  mcp_server/job_mcp_server.py
                                                     |----> RemoteOK API
                                                     |
                                                     +----> Lakebase (writes)
-                                                                |
-Dashboard user   -->   dashboard/app.py   ----> Lakebase (reads)
+                                                                ^
+                                                                | reads + writes
+Dashboard user   -->   dashboard/app.py   ---------+
 ```
 
 Both apps deploy independently as **Databricks Apps**, share the same Lakebase database,
@@ -43,12 +47,44 @@ final_capstone_project_databricks_bootcamp/
 │   ├── app.yaml               # Databricks App config
 │   └── requirements.txt
 └── dashboard/
-    ├── app.py                 # Flask read-only dashboard
+    ├── app.py                 # Flask dashboard (read + interactive write endpoints)
     ├── lakebase.py
-    ├── templates/index.html   # Dashboard UI (Chart.js, live-refresh)
+    ├── templates/index.html   # Kanban + charts + filters + modals (Chart.js, live-refresh)
     ├── app.yaml
     └── requirements.txt
 ```
+
+## Dashboard Features
+
+**Read-only views (auto-refresh every 15s)**
+
+- 5 KPI cards: total applications, in-flight, stale >7d, cover letters, searches
+- **Conversion funnel** with per-stage counts and Saved→Applied, Applied→Interview, Interview→Offer rates
+- **Weekly velocity** line chart (last 8 weeks of new applications)
+- **Jobs by source** doughnut chart (Adzuna vs USAJobs vs RemoteOK)
+- Stale applications, top semantic matches, recent searches, generated cover letters
+- Unified activity feed showing **agent tool calls** and **human dashboard actions** side-by-side
+
+**Interactive workspace**
+
+- **Kanban board** with 5 columns (Saved / Applied / Interviewing / Offer / Rejected)
+- Drag & drop cards between columns to change stage — persists instantly
+- **Filters**: search text (title/company), source, remote/on-site
+- Per-card actions: open posting (↗), add note (📝), delete (✕)
+- **Quick-edit table** underneath the Kanban with stage dropdowns per row
+- Confirmation modals for destructive actions
+- Toast notifications for every write
+
+**Interactive dashboard endpoints (writes)**
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST   | `/api/applications/<id>/stage` | Change pipeline stage (Kanban drop / dropdown) |
+| DELETE | `/api/applications/<id>` | Remove from pipeline |
+| POST   | `/api/applications/<id>/note` | Attach an interview note |
+
+Every human write is logged into `agent_activity_log` with a `[dashboard]` prefix
+so the activity feed shows human + agent contributions in one timeline.
 
 ## MCP Tools (14 total)
 
