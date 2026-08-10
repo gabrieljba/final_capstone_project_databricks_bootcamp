@@ -1,75 +1,59 @@
 """
-One-time secret setup script for the AI Job Hunting Copilot capstone.
+One-time setup script: creates the Databricks secret scopes and stores the
+API keys needed by the AI Job Hunting Copilot capstone. Run this locally
+(with the Databricks CLI configured) or from a notebook - never commit
+the resulting secret values anywhere.
 
-Run this in a Databricks notebook (NOT locally). It writes all required
-secrets to the Databricks secret scopes used by the MCP server and
-dashboard apps. Values are base64-encoded (same pattern as Day 3).
-
-Usage (in a Databricks notebook cell):
-
-    # Fill in the plaintext values below, then run this cell:
-    LAKEBASE_URL       = "postgresql://user:pass@host:5432/databricks_postgres?sslmode=require"
-    ADZUNA_APP_ID      = "your_adzuna_app_id"
-    ADZUNA_APP_KEY     = "your_adzuna_app_key"
-    USAJOBS_API_KEY    = "your_usajobs_api_key"
-    USAJOBS_USER_AGENT = "your.email@example.com"  # USAJobs requires a registered email as User-Agent
-
-    exec(open("/Workspace/path/to/setup_secrets.py").read())
-
-Alternatively, run each `databricks secrets put-secret` command in a
-terminal after base64-encoding your values.
+Usage:
+    python setup_secrets.py
 """
-
-import base64
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.service import workspace
+import getpass
 
 w = WorkspaceClient()
 
+# w.secrets.create_scope(scope="database")
+# w.secrets.put_secret(
+#     scope="database",
+#     key="lakebase-url",
+#     string_value=getpass.getpass("Paste your lakebase url")
+# )
 
-def _b64(value: str) -> str:
-    """Base64-encode a string (same format the broker modules decode from)."""
-    return base64.b64encode(value.encode("utf-8")).decode("utf-8")
+# w.secrets.create_scope(scope="jobs")
+w.secrets.put_secret(
+    scope="jobs",
+    key="adzuna-app-id",
+    string_value=getpass.getpass("Paste your Adzuna App ID: ")
+)
 
+w.secrets.put_secret(
+    scope="jobs",
+    key="adzuna-app-key",
+    string_value=getpass.getpass("Paste your Adzuna App Key: ")
+)
 
-def put_secret(scope: str, key: str, plaintext_value: str) -> None:
-    """Create the scope if missing, then upsert the secret (base64-encoded)."""
-    try:
-        w.secrets.create_scope(scope=scope)
-        print(f"[+] Created secret scope: {scope}")
-    except Exception:
-        # Scope already exists - ignore
-        pass
+w.secrets.put_secret(
+    scope="jobs",
+    key="usajobs-api-key",
+    string_value=getpass.getpass("Paste your USAJobs API Key: ")
+)
 
-    w.secrets.put_secret(
-        scope=scope,
-        key=key,
-        string_value=_b64(plaintext_value),
-    )
-    print(f"[+] Set secret: {scope}/{key}")
+w.secrets.put_secret(
+    scope="jobs",
+    key="usajobs-user-agent",
+    string_value=getpass.getpass("Paste your USAJobs registered email (User-Agent): ")
+)
 
+w.secrets.put_acl(
+    scope="database",
+    principal="users",
+    permission=workspace.AclPermission.READ,
+)
 
-# ---------------------------------------------------------------------------
-# Fill these in BEFORE running (leave as empty strings to skip a secret)
-# ---------------------------------------------------------------------------
-LAKEBASE_URL: str = ""        # e.g. "postgresql://role:pass@host:5432/databricks_postgres?sslmode=require"
-ADZUNA_APP_ID: str = ""       # From https://developer.adzuna.com/
-ADZUNA_APP_KEY: str = ""      # From https://developer.adzuna.com/
-USAJOBS_API_KEY: str = ""     # From https://developer.usajobs.gov/apirequest/
-USAJOBS_USER_AGENT: str = ""  # Your registered email (USAJobs requires this as User-Agent)
+w.secrets.put_acl(
+    scope="jobs",
+    principal="users",
+    permission=workspace.AclPermission.READ,
+)
 
-
-if __name__ == "__main__" or True:
-    if LAKEBASE_URL:
-        put_secret("database", "lakebase-url", LAKEBASE_URL)
-    if ADZUNA_APP_ID:
-        put_secret("jobs", "adzuna-app-id", ADZUNA_APP_ID)
-    if ADZUNA_APP_KEY:
-        put_secret("jobs", "adzuna-app-key", ADZUNA_APP_KEY)
-    if USAJOBS_API_KEY:
-        put_secret("jobs", "usajobs-api-key", USAJOBS_API_KEY)
-    if USAJOBS_USER_AGENT:
-        put_secret("jobs", "usajobs-user-agent", USAJOBS_USER_AGENT)
-
-    print("\n[✓] Done. Verify with:")
-    print("    databricks secrets list-secrets database")
-    print("    databricks secrets list-secrets jobs")
